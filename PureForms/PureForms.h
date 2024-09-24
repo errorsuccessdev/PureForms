@@ -40,5 +40,3 @@ Button* createButton(
 );
 
 bool showForm(Form* form, int showCommand);
-
-Form* getFormFromHWND(HWND hWnd);

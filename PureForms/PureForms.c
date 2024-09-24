@@ -1,16 +1,24 @@
 #include "PureForms.h"
 
-int global_nextButtonId = 100;
-HFONT global_buttonFont;
-Form* global_thisForm;
+typedef struct structPrivateButtonList 
+{
+	Button* button;
+	struct structPrivateButtonList* next;
+} private_ButtonList;
 
 LRESULT private_WindowProc(
 	HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 );
-
+Form* private_getFormFromHWND(HWND hWnd);
 int private_getButtonId(void);
 void private_doCleanup(void);
 void private_getGuiFont(void);
+void private_addButtonToList(Button* button);
+
+int global_nextButtonId = 100;
+HFONT global_buttonFont = NULL;
+Form* global_thisForm = NULL;
+private_ButtonList* global_firstButton = NULL;
 
 // #1
 Form* createForm(
@@ -107,6 +115,8 @@ Button* createButton(
 		(LPARAM) MAKELONG(TRUE, 0)
 	);
 
+	private_addButtonToList(button);
+
 	return button;
 }
 
@@ -128,7 +138,7 @@ bool showForm(Form* form, int showCommand)
 	return true;
 }
 
-Form* getFormFromHWND(HWND hWnd)
+Form* private_getFormFromHWND(HWND hWnd)
 {
 	LONG_PTR longPointer = GetWindowLongPtrW(
 		hWnd,
@@ -243,4 +253,29 @@ void private_doCleanup(void)
 
 	// Clean up fonts
 	DeleteObject(global_buttonFont);
+}
+
+void private_addButtonToList(Button* button)
+{
+	private_ButtonList* newListEnd = (private_ButtonList*) HeapAlloc(
+		GetProcessHeap(),
+		HEAP_ZERO_MEMORY,
+		sizeof(private_ButtonList)
+	);
+	assert(newListEnd);
+	newListEnd->button = button;
+	newListEnd->next = NULL;
+	if (global_firstButton == NULL)
+	{
+		global_firstButton = newListEnd;
+	}
+	else
+	{
+		private_ButtonList* listEnd = global_firstButton;
+		while (listEnd->next != NULL)
+		{
+			listEnd = listEnd->next;
+		}
+		listEnd->next = newListEnd;
+	}
 }
