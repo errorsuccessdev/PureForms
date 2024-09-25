@@ -1,12 +1,12 @@
 #include "PureForms.h"
 
-typedef struct structPrivateButtonList 
+typedef struct structPrivateButtonList
 {
 	Button* button;
 	struct structPrivateButtonList* next;
 } private_ButtonList;
 
-LRESULT private_WindowProc(
+LRESULT private_windowProc(
 	HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 );
 Form* private_getFormFromHWND(HWND hWnd);
@@ -14,15 +14,17 @@ int private_getButtonId(void);
 void private_doCleanup(void);
 void private_getGuiFont(void);
 void private_addButtonToList(Button* button);
+EventHandlers* private_initEventHandlers(void);
 
 int global_nextButtonId = 100;
 HFONT global_buttonFont = NULL;
 Form* global_thisForm = NULL;
 private_ButtonList* global_firstButton = NULL;
+private_ButtonList* global_lastButton = NULL;
 
 // #1
 Form* createForm(
-    int x, int y, int width, int height, wchar* title
+	int x, int y, int width, int height, wchar* title
 )
 {
 	// Load common controls DLL 
@@ -32,7 +34,7 @@ Form* createForm(
 	InitCommonControlsEx(&icex);
 	HINSTANCE hInstance = GetModuleHandleW(NULL);
 	WNDCLASS wndClass = { 0 };
-	wndClass.lpfnWndProc = private_WindowProc;
+	wndClass.lpfnWndProc = private_windowProc;
 	wndClass.hInstance = hInstance;
 	wndClass.lpszClassName = WINDOW_CLASS_NAME;
 	RegisterClassW(&wndClass);
@@ -67,7 +69,10 @@ Form* createForm(
 	form->height = height;
 	form->hWnd = hWnd;
 	form->title = title;
+	form->eventHandlers = private_initEventHandlers();
 	global_thisForm = form;
+
+	// This isn't used by the form, but we need for the buttons
 	private_getGuiFont();
 
 	return form;
@@ -75,7 +80,7 @@ Form* createForm(
 
 // #3
 Button* createButton(
-    int x, int y, int width, int height, wchar* text
+	int x, int y, int width, int height, wchar* text
 )
 {
 	int id = private_getButtonId();
@@ -107,6 +112,7 @@ Button* createButton(
 	button->width = width;
 	button->height = height;
 	button->text = text;
+	button->eventHandlers = private_initEventHandlers();
 
 	SendMessageW(
 		button->hWnd,
@@ -126,7 +132,7 @@ bool showForm(Form* form, int showCommand)
 	//If the window was previously visible, the return value is nonzero.
 	//If the window was previously hidden, the return value is zero.
 	int result = ShowWindow(form->hWnd, showCommand);
-	assert(result == 0); 
+	assert(result == 0);
 
 	// Main message loop
 	MSG msg = { 0 };
@@ -147,22 +153,20 @@ Form* private_getFormFromHWND(HWND hWnd)
 	return (Form*) longPointer;
 }
 
-LRESULT private_WindowProc(
+LRESULT private_windowProc(
 	HWND hWnd,
 	UINT msg,
 	WPARAM wParam,
 	LPARAM lParam
 )
 {
-	static HFONT font;
 	LRESULT result = 0;
 
 	if (msg == WM_CREATE)
 	{
 		// Associate form with HWND
 		CREATESTRUCT* createStruct = (CREATESTRUCT*) lParam;
-		Form* form =
-			(Form*) createStruct->lpCreateParams;
+		Form* form = (Form*) createStruct->lpCreateParams;
 		SetWindowLongPtrW(
 			hWnd,
 			GWLP_USERDATA,
@@ -187,14 +191,30 @@ LRESULT private_WindowProc(
 		SendMessage(button, WM_SETFONT, (WPARAM) font, (LPARAM) MAKELONG(TRUE, 0));*/
 
 	}
+	else if (msg == WM_LBUTTONDOWN)
+	{
+		Form* form = private_getFormFromHWND(hWnd);
+		if (form->eventHandlers->OnClick != NULL)
+		{
+			form->eventHandlers->OnClick(form);
+		}
+	}
 	else if (msg == WM_COMMAND)
 	{
 		// Handle buttons
-		//int id = LOWORD(wParam);
-		//if (id == BTNID_OK)
-		//{
-		//	OutputDebugStringW(L"You clicked the ok button\n");
-		//}
+		int id = LOWORD(wParam);
+		for (private_ButtonList* listItem = global_firstButton;
+			listItem != NULL;
+			listItem = listItem->next)
+		{
+			Button* button = listItem->button;
+			EventHandler_OnClick onClick = button->eventHandlers->OnClick;
+			if (id == button->id &&
+				onClick != NULL)
+			{
+				onClick(button);
+			}
+		}
 	}
 	else if (msg == WM_DESTROY)
 	{
@@ -249,7 +269,18 @@ void private_doCleanup(void)
 		global_thisForm
 	);
 
-	// Clean up buttons
+	// Clean up buttons and buttonList
+	private_ButtonList* listItem = global_firstButton;
+	private_ButtonList* nextItem;
+	HANDLE processHeap = GetProcessHeap();
+	while (listItem != NULL)
+	{
+		nextItem = listItem->next;
+		HeapFree(processHeap, 0, listItem->button->eventHandlers);
+		HeapFree(processHeap, 0, listItem->button);
+		HeapFree(processHeap, 0, listItem);
+		listItem = nextItem;
+	}
 
 	// Clean up fonts
 	DeleteObject(global_buttonFont);
@@ -271,11 +302,18 @@ void private_addButtonToList(Button* button)
 	}
 	else
 	{
-		private_ButtonList* listEnd = global_firstButton;
-		while (listEnd->next != NULL)
-		{
-			listEnd = listEnd->next;
-		}
-		listEnd->next = newListEnd;
+		global_lastButton->next = newListEnd;
 	}
+	global_lastButton = newListEnd;
+}
+
+EventHandlers* private_initEventHandlers(void)
+{
+	EventHandlers* eventHandlers = (EventHandlers*) HeapAlloc(
+		GetProcessHeap(),
+		HEAP_ZERO_MEMORY,
+		sizeof(EventHandlers)
+	);
+	assert(eventHandlers != NULL);
+	return eventHandlers;
 }

@@ -1,13 +1,30 @@
 /*
  *	TODOS:
- *		1. Don't leak buttons at the end of the program
- *		2. Event handlers :)
- *		3. Probably don't want them resizing the form (for now)
- *		4. Allow to set default button
+ *		1. Probably don't want them resizing the form (for now)
+ *		2. Allow to set default button
  * 
+ * Tarriest_Python
+: I just had a thought, if you do go for a function to add 
+event handlers you can probably wrap the user provided function 
+pointer with a private function and provide an API which uses 
+the correct types as parameter
+i.e. button_add_OnClick(Button *b, void (*)(Button *)) { // ... }
+
+Tarriest_Python
+: basically teh private function would just cast the 
+void * -> Button * then pass it to the user provided function pointer
+Tarriest_Python
+: you store the user callback function on the button wiht the correct 
+type, but actually call the private function with the button 
+pointer and the function pointer as arguments when you get the event
+Tarriest_Python
+: so private_OnClick(button, button->OnClick)
  */
 
 #include "PureForms.h"
+
+void button_OnClick(void* this);
+void form_OnClick(void* this);
 
 int WINAPI wWinMain(
 	_In_ HINSTANCE hInstance,
@@ -24,6 +41,7 @@ int WINAPI wWinMain(
 		L"My Form"
 	);
 	assert(frmMain != NULL);
+	frmMain->eventHandlers->OnClick = form_OnClick;
 
 	Button* btnFirst = createButton(
 		10,
@@ -41,6 +59,31 @@ int WINAPI wWinMain(
 		L"No, click me instead!"
 	);
 
+	Button* btnThird = createButton(
+		10,
+		90,
+		200,
+		30,
+		L"DO NOT click me!"
+	);
+
+	// Wrap in function, ideally? Maybe?
+	btnFirst->eventHandlers->OnClick = button_OnClick;
+	btnSecond->eventHandlers->OnClick = button_OnClick;
+	btnThird->eventHandlers->OnClick = button_OnClick;
+
 	bool result = showForm(frmMain, showCommand);
 	assert(result);
+}
+
+void button_OnClick(void* this)
+{
+	Button* button = (Button*) this;
+	OutputDebugStringW(button->text);
+}
+
+void form_OnClick(void* this)
+{
+	Form* form = (Form*) this;
+	OutputDebugStringW(form->title);
 }

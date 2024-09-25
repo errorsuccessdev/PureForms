@@ -10,6 +10,13 @@
 
 #define WINDOW_CLASS_NAME L"PureForms"
 
+typedef void (*EventHandler_OnClick) (void* this);
+
+typedef struct structEventHandlers
+{
+    EventHandler_OnClick OnClick;
+} EventHandlers;
+
 typedef struct structForm
 {
     HWND hWnd;
@@ -18,6 +25,7 @@ typedef struct structForm
     int width;
     int height;
     wchar* title;
+    EventHandlers* eventHandlers;
 } Form;
 
 typedef struct structButton
@@ -29,6 +37,7 @@ typedef struct structButton
     int width;
     int height;
     wchar* text;
+    EventHandlers* eventHandlers;
 } Button;
 
 Form* createForm(
