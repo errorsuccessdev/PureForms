@@ -1,6 +1,6 @@
 /*
  *	TODOS:
- *		- Tooltips?
+ *		???
  */
 
 #include "PureForms.h"
@@ -8,6 +8,7 @@
 void button_OnClick(Control* this, void* eventData);
 void form_OnClick(Form* this, void* eventData);
 void form_OnClose(Form* this, void* eventData);
+void button_OnHover(Control* this, void* eventData);
 
 int WINAPI wWinMain(
 	_In_ HINSTANCE hInstance,
@@ -55,10 +56,17 @@ int WINAPI wWinMain(
 	);
 
 	addControlEventHandler(
-		getControl(btnFirst), 
+		getControl(btnFirst),
 		ControlEvent_OnClick,
 		button_OnClick
 	);
+	addControlEventHandler(
+		getControl(btnFirst), 
+		ControlEvent_OnHover,
+		button_OnHover
+	);
+	addTooltip(getControl(btnFirst), L"This is a tooltip");
+
 	addControlEventHandler(
 		getControl(btnSecond), 
 		ControlEvent_OnClick,
@@ -95,4 +103,9 @@ void form_OnClose(Form* this, void* eventData)
 		MB_YESNO | MB_ICONQUESTION
 	);
 	data->shouldClose = (option == IDYES) ? true : false;
+}
+
+void button_OnHover(Control* this, void* eventData)
+{
+	OutputDebugStringW(L"OnHover event handler was called");
 }

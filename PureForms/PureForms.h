@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <commctrl.h>
+#include <windowsx.h>
 
 ////////////////////////////////////////////////////////////////////////////
 // Constants and defines
@@ -67,12 +68,20 @@ typedef void (*ControlEventHandler) (Control* this, void* eventData);
 typedef struct structControlEventHandlers
 {
     ControlEventHandler OnClick;
+    ControlEventHandler OnHover;
 } ControlEventHandlers;
 
 typedef enum enumControlEvent
 {
-    ControlEvent_OnClick
+    ControlEvent_OnClick,
+    ControlEvent_OnHover
 } ControlEvent;
+
+typedef struct structTooltip
+{
+    HWND hWnd;
+    TTTOOLINFOW toolInfo;
+} Tooltip;
 
 typedef struct structControl
 {
@@ -82,11 +91,16 @@ typedef struct structControl
     int width;
     int height;
     ControlEventHandlers eventHandlers;
+    Tooltip tooltip;
 } Control;
 
 void addControlEventHandler(
-    Control* control, ControlEvent event, ControlEventHandler eventHandler
+    Control* control, 
+    ControlEvent event,
+    ControlEventHandler eventHandler
 );
+
+void addTooltip(Control* control, wchar* text);
 
 ////////////////////////////////////////////////////////////////////////////
 // Button "class"

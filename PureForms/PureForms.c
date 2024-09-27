@@ -1,6 +1,7 @@
 #include "PureForms.h"
 
-#define PRIVATE_WINDOW_CLASS_NAME L"PureForms"
+#define PRIVATE_WINDOW_CLASS_NAME	L"PureForms"
+#define PRIVATE_SUBCLASS_ID			100
 
 typedef struct structPrivateButtonList
 {
@@ -16,6 +17,17 @@ int private_getButtonId(void);
 void private_doCleanup(void);
 void private_getGuiFont(void);
 void private_addButtonToList(Button* button);
+Tooltip private_createTooltip(HWND hWnd, wchar* tooltipText);
+void private_centerForm(Form* form);
+void private_registerSubclass(Control* control);
+LRESULT CALLBACK private_subclassProc(
+	HWND hWnd,
+	unsigned int msg,
+	WPARAM wParam,
+	LPARAM lParam,
+	UINT_PTR subclassId,
+	DWORD_PTR tooltipPointer
+);
 
 int global_nextButtonId = 100;
 HFONT global_buttonFont = NULL;
@@ -51,7 +63,7 @@ Form* createForm(int x, int y, int width, int height, wchar* title)
 		PRIVATE_WINDOW_CLASS_NAME, // Window class
 		title, // Window title
 		// Window style (no resizing allowed)
-		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, 
+		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
 		x, y, width, height, // Size and position
 		NULL, // Parent window    
 		NULL, // Menu
@@ -139,8 +151,8 @@ void showForm(Form* form, int showCommand)
 }
 
 void addFormEventHandler(
-	Form* form, 
-	FormEvent event, 
+	Form* form,
+	FormEvent event,
 	FormEventHandler eventHandler
 )
 {
@@ -155,8 +167,8 @@ void addFormEventHandler(
 }
 
 void addControlEventHandler(
-	Control* control, 
-	ControlEvent event, 
+	Control* control,
+	ControlEvent event,
 	ControlEventHandler eventHandler
 )
 {
@@ -164,6 +176,20 @@ void addControlEventHandler(
 	{
 		control->eventHandlers.OnClick = eventHandler;
 	}
+	else if (event == ControlEvent_OnHover)
+	{
+		control->eventHandlers.OnHover = eventHandler;
+		private_registerSubclass(control);
+	}
+}
+
+void addTooltip(Control* control, wchar* text)
+{
+	control->tooltip = private_createTooltip(
+		control->hWnd,
+		text
+	);
+	private_registerSubclass(control);
 }
 
 Form* private_getFormFromHWND(HWND hWnd)
@@ -213,7 +239,7 @@ LRESULT private_windowProc(
 			listItem = listItem->next)
 		{
 			Button* button = listItem->button;
-			ControlEventHandler onClick = 
+			ControlEventHandler onClick =
 				button->control.eventHandlers.OnClick;
 			if (id == button->id &&
 				onClick != NULL)
@@ -237,7 +263,7 @@ LRESULT private_windowProc(
 			EventData_OnClose eventData = { false };
 			onClose(form, &eventData);
 			if (NOT eventData.shouldClose)
-			{ 
+			{
 				return 0;
 			}
 		}
@@ -326,4 +352,243 @@ void private_addButtonToList(Button* button)
 		global_lastButton->next = newListEnd;
 	}
 	global_lastButton = newListEnd;
+}
+
+/// @brief centers a window on the desktop
+/// @param hWnd a handle to the window to center
+void private_centerForm(Form* form)
+{
+	HWND hWnd = form->hWnd;
+	RECT rectDesktop, rectDialog, rectDesktopCopy;
+	GetWindowRect(
+		GetDesktopWindow(),
+		&rectDesktop
+	);
+	GetWindowRect(
+		hWnd,
+		&rectDialog
+	);
+	CopyRect(
+		&rectDesktopCopy,
+		&rectDesktop
+	);
+
+	// Moves rect into top left corner
+	// Desktop is already in the top left corner so we don't need to do this
+	OffsetRect(
+		&rectDialog,
+		-rectDialog.left,
+		-rectDialog.top
+	);
+
+	// Moves left and above the top left corner by the size of the dialog box
+	OffsetRect(
+		&rectDesktopCopy,
+		-rectDialog.right,
+		-rectDialog.bottom
+	);
+
+	SetWindowPos(
+		hWnd,
+		HWND_TOP,
+		rectDesktop.left + (rectDesktopCopy.right / 2),
+		rectDesktop.top + (rectDesktopCopy.bottom / 2),
+		0,
+		0,
+		SWP_NOSIZE
+	);
+}
+
+Tooltip private_createTooltip(HWND hWnd, wchar* tooltipText)
+{
+	HINSTANCE hInstance = (HINSTANCE) GetWindowLongPtrW(
+		hWnd,
+		GWLP_HINSTANCE
+	);
+	HWND hWndTooltip = CreateWindowExW(
+		0,
+		TOOLTIPS_CLASSW,
+		NULL,
+		WS_POPUP | TTS_ALWAYSTIP,
+		CW_USEDEFAULT,
+		CW_USEDEFAULT,
+		CW_USEDEFAULT,
+		CW_USEDEFAULT,
+		hWnd,
+		NULL,
+		hInstance,
+		NULL
+	);
+	assert(hWndTooltip);
+
+	// Build the toolinfo structure
+	TTTOOLINFOW toolInfo = { 0 };
+	toolInfo.cbSize = sizeof(TTTOOLINFOW);
+	toolInfo.uFlags = TTF_IDISHWND | TTF_TRACK | TTF_ABSOLUTE;
+	toolInfo.hwnd = hWnd;
+	toolInfo.hinst = hInstance;
+	toolInfo.lpszText = tooltipText;
+	toolInfo.uId = (UINT_PTR) hWnd;
+	GetClientRect(
+		hWnd,
+		&toolInfo.rect
+	);
+
+	// Associate the tooltip with the tool
+	SendMessageW(hWndTooltip,
+		TTM_ADDTOOL,
+		0,
+		(LPARAM) (LPTTTOOLINFOW) &toolInfo);
+
+	// Build the Tooltip structure
+	Tooltip tooltip = {
+		.hWnd = hWndTooltip,
+		.toolInfo = toolInfo
+	};
+	return tooltip;
+}
+
+void private_registerSubclass(Control* control)
+{
+	BOOL result = SetWindowSubclass(
+		control->hWnd,
+		(SUBCLASSPROC) private_subclassProc,
+		PRIVATE_SUBCLASS_ID,
+		(DWORD_PTR) control
+	);
+	assert(result);
+}
+
+/// @brief the window procedure for subclassed controls
+/// @param hWnd a window handle to the control
+/// @param msg the window message
+/// @param wParam
+/// @param lParam
+/// @param subclassId required by subclass window proc template
+/// @param controlPointer a pointer to the subclassed control
+/// @return TRUE if message was fully processed by this procedure, 
+///         FALSE or the return value of DefSubclassProc() if not
+LRESULT CALLBACK private_subclassProc(
+	HWND hWnd,
+	unsigned int msg,
+	WPARAM wParam,
+	LPARAM lParam,
+	UINT_PTR subclassId,
+	DWORD_PTR controlPointer
+)
+{
+	UNREFERENCED_PARAMETER(subclassId);
+	BOOL result = TRUE;
+
+	// Track if the mouse is currently within the control
+	static bool mouseIsInsideControl = false;
+
+	Control* control = (Control*) controlPointer;
+
+	// Hide the tooltip when the mouse pointer leaves the window
+	if (msg == WM_MOUSELEAVE)
+	{
+		SendMessageW(
+			control->tooltip.hWnd,
+			TTM_TRACKACTIVATE,
+			(WPARAM) FALSE,
+			(LPARAM) & (control->tooltip.toolInfo)
+		);
+		OutputDebugStringW(L"Mouse has left\n");
+		mouseIsInsideControl = false;
+	}
+	else if (msg == WM_MOUSEMOVE)
+	{
+		// Request mouse hover notifications
+		TRACKMOUSEEVENT tracker =
+		{
+			.cbSize = sizeof(TRACKMOUSEEVENT),
+			.dwFlags = TME_HOVER,
+			.dwHoverTime = HOVER_DEFAULT,
+			.hwndTrack = hWnd
+		};
+		TrackMouseEvent(&tracker);
+	}
+	else if (msg == WM_MOUSEHOVER)
+	{
+		// Track the mouse position across calls
+		static int priorMouseX, priorMouseY;
+		int currentMouseX, currentMouseY;
+
+		// If the mouse was not previously inside the checkbox
+		if (NOT mouseIsInsideControl)
+		{
+			// Request notification for mouse leave
+			TRACKMOUSEEVENT tracker =
+			{
+				.cbSize = sizeof(TRACKMOUSEEVENT),
+				.hwndTrack = hWnd,
+				.dwFlags = TME_LEAVE
+			};
+			TrackMouseEvent(&tracker);
+			mouseIsInsideControl = true;
+
+			// Call onHover event handler
+			OutputDebugStringW(L"Mouse is hovering\n");
+			ControlEventHandler onHover =
+				control->eventHandlers.OnHover;
+			if (onHover != NULL)
+			{
+				onHover(control, NULL);
+			}
+
+			// If we have a tooltip, show the tooltip
+			if (control->tooltip.hWnd != NULL)
+			{
+				// Activate tooltip
+				SendMessageW(
+					control->tooltip.hWnd,
+					TTM_TRACKACTIVATE,
+					(WPARAM) TRUE,
+					(LPARAM) &(control->tooltip.toolInfo)
+				);
+			}
+		}
+
+		// Check if mouse has moved and update 
+		// the tooltip position if so
+		if (control->tooltip.hWnd != 0)
+		{
+			currentMouseX = GET_X_LPARAM(lParam);
+			currentMouseY = GET_Y_LPARAM(lParam);
+			if ((currentMouseX != priorMouseX) ||
+				(currentMouseY != priorMouseY))
+			{
+				priorMouseX = currentMouseX;
+				priorMouseY = currentMouseY;
+				POINT point = { currentMouseX, currentMouseY };
+				ClientToScreen(
+					hWnd,
+					&point
+				);
+
+				// Offset checkbox so it is above the cursor, 
+				// but still aligned with the left edge of the cursor
+				SendMessageW(
+					control->tooltip.hWnd,
+					TTM_TRACKPOSITION,
+					0,
+					(LPARAM) MAKELONG(
+						point.x,
+						point.y - 20
+					)
+				);
+			}
+		}
+	}
+	else
+	{
+		result = DefSubclassProc(
+			hWnd,
+			msg,
+			wParam,
+			lParam
+		);
+	}
+	return result;
 }
