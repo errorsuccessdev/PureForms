@@ -1,5 +1,7 @@
 #include "PureForms.h"
 
+#define PRIVATE_WINDOW_CLASS_NAME L"PureForms"
+
 typedef struct structPrivateButtonList
 {
 	Button* button;
@@ -14,7 +16,6 @@ int private_getButtonId(void);
 void private_doCleanup(void);
 void private_getGuiFont(void);
 void private_addButtonToList(Button* button);
-EventHandlers* private_initEventHandlers(void);
 
 int global_nextButtonId = 100;
 HFONT global_buttonFont = NULL;
@@ -22,10 +23,7 @@ Form* global_thisForm = NULL;
 private_ButtonList* global_firstButton = NULL;
 private_ButtonList* global_lastButton = NULL;
 
-// #1
-Form* createForm(
-	int x, int y, int width, int height, wchar* title
-)
+Form* createForm(int x, int y, int width, int height, wchar* title)
 {
 	// Load common controls DLL 
 	INITCOMMONCONTROLSEX icex = { 0 };
@@ -36,7 +34,8 @@ Form* createForm(
 	WNDCLASS wndClass = { 0 };
 	wndClass.lpfnWndProc = private_windowProc;
 	wndClass.hInstance = hInstance;
-	wndClass.lpszClassName = WINDOW_CLASS_NAME;
+	wndClass.lpszClassName = PRIVATE_WINDOW_CLASS_NAME;
+	wndClass.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
 	RegisterClassW(&wndClass);
 
 	Form* form = (Form*) HeapAlloc(
@@ -48,18 +47,16 @@ Form* createForm(
 
 	// Create the window.
 	HWND hWnd = CreateWindowExW(
-		0,                          // Optional window styles.
-		WINDOW_CLASS_NAME,          // Window class
-		title,                // Window text
-		WS_OVERLAPPEDWINDOW,        // Window style
-
-		// Size and position
-		x, y, width, height,
-
-		NULL,       // Parent window    
-		NULL,       // Menu
-		hInstance,  // Instance handle
-		form  // Additional application data
+		0, // Optional window styles                  
+		PRIVATE_WINDOW_CLASS_NAME, // Window class
+		title, // Window title
+		// Window style (no resizing allowed)
+		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, 
+		x, y, width, height, // Size and position
+		NULL, // Parent window    
+		NULL, // Menu
+		hInstance, // Instance handle
+		form // Additional application data
 	);
 	assert(hWnd != NULL);
 
@@ -69,33 +66,33 @@ Form* createForm(
 	form->height = height;
 	form->hWnd = hWnd;
 	form->title = title;
-	form->eventHandlers = private_initEventHandlers();
 	global_thisForm = form;
 
-	// This isn't used by the form, but we need for the buttons
+	// This isn't used by the form, but we need it for the buttons
 	private_getGuiFont();
 
 	return form;
 }
 
-// #3
 Button* createButton(
-	int x, int y, int width, int height, wchar* text
+	int x, int y, int width, int height, wchar* text, bool isDefault
 )
 {
 	int id = private_getButtonId();
+	long styles = WS_TABSTOP | WS_VISIBLE | WS_CHILD;
+	styles |= (isDefault) ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON;
 	HWND hWndButton = CreateWindowW(
-		L"BUTTON",  // Predefined class; Unicode assumed 
-		text,      // Button text 
-		WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,  // Styles 
-		x,         // x position 
-		y,         // y position 
-		width,        // Button width
-		height,        // Button height
-		global_thisForm->hWnd,       // Parent window
-		(HMENU) (UINT_PTR) id,       // Button's ID
-		GetModuleHandleW(NULL),
-		NULL  // Pointer not needed.
+		L"BUTTON", // Predefined class; Unicode assumed 
+		text, // Button text 
+		styles, // Styles 
+		x, // x position 
+		y, // y position 
+		width, // Button width
+		height, // Button height
+		global_thisForm->hWnd, // Parent window
+		(HMENU) (UINT_PTR) id, // Button's ID
+		GetModuleHandleW(NULL), // hInstance
+		NULL  // Pointer not needed
 	);
 	assert(hWndButton != NULL);
 
@@ -105,17 +102,16 @@ Button* createButton(
 		sizeof(Button)
 	);
 	assert(button != NULL);
-	button->hWnd = hWndButton;
+	button->control.hWnd = hWndButton;
 	button->id = id;
-	button->x = x;
-	button->y = y;
-	button->width = width;
-	button->height = height;
+	button->control.x = x;
+	button->control.y = y;
+	button->control.width = width;
+	button->control.height = height;
 	button->text = text;
-	button->eventHandlers = private_initEventHandlers();
 
 	SendMessageW(
-		button->hWnd,
+		button->control.hWnd,
 		WM_SETFONT,
 		(WPARAM) global_buttonFont,
 		(LPARAM) MAKELONG(TRUE, 0)
@@ -126,11 +122,10 @@ Button* createButton(
 	return button;
 }
 
-// #2
-bool showForm(Form* form, int showCommand)
+void showForm(Form* form, int showCommand)
 {
-	//If the window was previously visible, the return value is nonzero.
-	//If the window was previously hidden, the return value is zero.
+	//If the window was previously visible, the return value is nonzero
+	//If the window was previously hidden, the return value is zero
 	int result = ShowWindow(form->hWnd, showCommand);
 	assert(result == 0);
 
@@ -141,7 +136,34 @@ bool showForm(Form* form, int showCommand)
 		TranslateMessage(&msg);
 		DispatchMessageW(&msg);
 	}
-	return true;
+}
+
+void addFormEventHandler(
+	Form* form, 
+	FormEvent event, 
+	FormEventHandler eventHandler
+)
+{
+	if (event == FormEvent_OnClick)
+	{
+		form->eventHandlers.OnClick = eventHandler;
+	}
+	else if (event == FormEvent_OnClose)
+	{
+		form->eventHandlers.OnClose = eventHandler;
+	}
+}
+
+void addControlEventHandler(
+	Control* control, 
+	ControlEvent event, 
+	ControlEventHandler eventHandler
+)
+{
+	if (event == ControlEvent_OnClick)
+	{
+		control->eventHandlers.OnClick = eventHandler;
+	}
 }
 
 Form* private_getFormFromHWND(HWND hWnd)
@@ -172,31 +194,14 @@ LRESULT private_windowProc(
 			GWLP_USERDATA,
 			(LONG_PTR) form
 		);
-
-		// Set up font we will use in the form
-	/*	const long nFontSize = 12;
-		HDC hdc = GetDC(hWnd);
-		LOGFONT logFont = { 0 };
-		logFont.lfHeight = -MulDiv(
-			nFontSize,
-			GetDpiForWindow(hWnd),
-			72
-		);
-		logFont.lfWeight = FW_NORMAL;
-		wcscpy(logFont.lfFaceName, L"Segoe UI Regular");
-		font = CreateFontIndirectW(&logFont);
-		ReleaseDC(hWnd, hdc);*/
-
-		/*HWND button = createButton(L"Ok", 20, 40, 50, 20, hWnd, BTNID_OK);
-		SendMessage(button, WM_SETFONT, (WPARAM) font, (LPARAM) MAKELONG(TRUE, 0));*/
-
 	}
 	else if (msg == WM_LBUTTONDOWN)
 	{
 		Form* form = private_getFormFromHWND(hWnd);
-		if (form->eventHandlers->OnClick != NULL)
+		if (form->eventHandlers.OnClick != NULL)
 		{
-			form->eventHandlers->OnClick(form);
+			EventData_OnClick data = { form->title };
+			form->eventHandlers.OnClick(form, &data);
 		}
 	}
 	else if (msg == WM_COMMAND)
@@ -208,11 +213,13 @@ LRESULT private_windowProc(
 			listItem = listItem->next)
 		{
 			Button* button = listItem->button;
-			EventHandler_OnClick onClick = button->eventHandlers->OnClick;
+			ControlEventHandler onClick = 
+				button->control.eventHandlers.OnClick;
 			if (id == button->id &&
 				onClick != NULL)
 			{
-				onClick(button);
+				EventData_OnClick data = { button->text };
+				onClick(&(button->control), &data);
 			}
 		}
 	}
@@ -220,6 +227,21 @@ LRESULT private_windowProc(
 	{
 		private_doCleanup();
 		PostQuitMessage(0);
+	}
+	else if (msg == WM_CLOSE)
+	{
+		Form* form = private_getFormFromHWND(hWnd);
+		FormEventHandler onClose = form->eventHandlers.OnClose;
+		if (onClose != NULL)
+		{
+			EventData_OnClose eventData = { false };
+			onClose(form, &eventData);
+			if (NOT eventData.shouldClose)
+			{ 
+				return 0;
+			}
+		}
+		DestroyWindow(hWnd);
 	}
 	else
 	{
@@ -276,7 +298,6 @@ void private_doCleanup(void)
 	while (listItem != NULL)
 	{
 		nextItem = listItem->next;
-		HeapFree(processHeap, 0, listItem->button->eventHandlers);
 		HeapFree(processHeap, 0, listItem->button);
 		HeapFree(processHeap, 0, listItem);
 		listItem = nextItem;
@@ -305,15 +326,4 @@ void private_addButtonToList(Button* button)
 		global_lastButton->next = newListEnd;
 	}
 	global_lastButton = newListEnd;
-}
-
-EventHandlers* private_initEventHandlers(void)
-{
-	EventHandlers* eventHandlers = (EventHandlers*) HeapAlloc(
-		GetProcessHeap(),
-		HEAP_ZERO_MEMORY,
-		sizeof(EventHandlers)
-	);
-	assert(eventHandlers != NULL);
-	return eventHandlers;
 }

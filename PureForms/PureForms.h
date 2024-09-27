@@ -5,17 +5,37 @@
 #include <assert.h>
 #include <commctrl.h>
 
+////////////////////////////////////////////////////////////////////////////
+// Constants and defines
+////////////////////////////////////////////////////////////////////////////
+
 #define NOT !
 #define wchar wchar_t
 
-#define WINDOW_CLASS_NAME L"PureForms"
+////////////////////////////////////////////////////////////////////////////
+// Macros
+////////////////////////////////////////////////////////////////////////////
 
-typedef void (*EventHandler_OnClick) (void* this);
+#define getControl(_a) &((_a)->control)
 
-typedef struct structEventHandlers
+////////////////////////////////////////////////////////////////////////////
+// Form "class"
+////////////////////////////////////////////////////////////////////////////
+
+typedef struct structForm Form;
+typedef void (*FormEventHandler) (Form* this, void* eventData);
+
+typedef struct structFormEventHandlers
 {
-    EventHandler_OnClick OnClick;
-} EventHandlers;
+    FormEventHandler OnClick;
+    FormEventHandler OnClose;
+} FormEventHandlers;
+
+typedef enum enumFormEvent 
+{ 
+    FormEvent_OnClick,
+    FormEvent_OnClose 
+} FormEvent;
 
 typedef struct structForm
 {
@@ -25,27 +45,74 @@ typedef struct structForm
     int width;
     int height;
     wchar* title;
-    EventHandlers* eventHandlers;
+    FormEventHandlers eventHandlers;
 } Form;
 
-typedef struct structButton
+Form* createForm(int x, int y, int width, int height, wchar* title);
+
+void showForm(Form* form, int showCommand);
+
+void addFormEventHandler(
+    Form* form, FormEvent event, FormEventHandler eventHandler
+);
+
+////////////////////////////////////////////////////////////////////////////
+// Control "class"
+////////////////////////////////////////////////////////////////////////////
+
+typedef struct structControl Control;
+
+typedef void (*ControlEventHandler) (Control* this, void* eventData);
+
+typedef struct structControlEventHandlers
+{
+    ControlEventHandler OnClick;
+} ControlEventHandlers;
+
+typedef enum enumControlEvent
+{
+    ControlEvent_OnClick
+} ControlEvent;
+
+typedef struct structControl
 {
     HWND hWnd;
-    int id;
     int x;
     int y;
     int width;
     int height;
+    ControlEventHandlers eventHandlers;
+} Control;
+
+void addControlEventHandler(
+    Control* control, ControlEvent event, ControlEventHandler eventHandler
+);
+
+////////////////////////////////////////////////////////////////////////////
+// Button "class"
+////////////////////////////////////////////////////////////////////////////
+
+typedef struct structButton
+{
+    Control control;
+    int id;
     wchar* text;
-    EventHandlers* eventHandlers;
 } Button;
 
-Form* createForm(
-    int x, int y, int width, int height, wchar* title
-);
-
 Button* createButton(
-    int x, int y, int width, int height, wchar* text
+    int x, int y, int width, int height, wchar* text, bool isDefault
 );
 
-bool showForm(Form* form, int showCommand);
+////////////////////////////////////////////////////////////////////////////
+// EventData structs
+////////////////////////////////////////////////////////////////////////////
+
+typedef struct structEventDataOnClick
+{
+    wchar* text;
+} EventData_OnClick;
+
+typedef struct structEventDataOnClose
+{
+    bool shouldClose;
+} EventData_OnClose;
