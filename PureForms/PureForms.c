@@ -1,25 +1,89 @@
+/*
+	TODOs:
+	1. Bitmaps in their entirety are a total hack. They have no HWNDs, they
+		are being drawn directly on the form. The one bitmap we are using is
+		being tracked in a global variable. We probably need to rework this 
+		entire thing into some kind of different control type
+	2. Global variables in general should be refactored out somehow
+	3. EventData members often make no sense and need to be fleshed out
+	4. Some kind of control storage mechanism that isn't just a list of buttons
+	5. Some kind of layout system ;_;
+*/
+
 #include "PureForms.h"
 
 #define PRIVATE_WINDOW_CLASS_NAME	L"PureForms"
 #define PRIVATE_SUBCLASS_ID			100
 
+/// @brief Tracks the buttons currently on the form. HACK.
 typedef struct structPrivateButtonList
 {
 	Button* button;
 	struct structPrivateButtonList* next;
 } private_ButtonList;
 
+/// @brief Main window procedure
 LRESULT private_windowProc(
 	HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 );
+
+/// @brief Retreives a Form* from the specified HWND's user data
+/// @param hWnd The HWND of the form
+/// @return A pointer to the form associated with that HWND
 Form* private_getFormFromHWND(HWND hWnd);
+
+/// @brief Gets a unique button ID
+/// @param None
+/// @return A button ID as an int
 int private_getButtonId(void);
+
+/// @brief Cleans up all resources associated with the form, and the form itself
+/// @param None
 void private_doCleanup(void);
+
+/// @brief Creates the font used in the GUI via GDI and stores it in global var
+/// @param None
 void private_getGuiFont(void);
+
+/// @brief Adds a button to the buttonList
+/// @param button The button to add
 void private_addButtonToList(Button* button);
+
+/// @brief Creates a new tooltip
+/// @param hWnd The HWND to associate with the tooltip
+/// @param tooltipText The text to show inside the tooltip
+/// @return The created tooltip
 Tooltip private_createTooltip(HWND hWnd, wchar* tooltipText);
-void private_centerForm(Form* form);
+
+/// @brief Subclasses a particular control. Needed for tooltips and hover events
+/// @param control The control to be subclassed
 void private_registerSubclass(Control* control);
+
+/// @brief Create a bitmap and initialize common bitmap parameters
+/// @param x The X position
+/// @param y The Y position
+/// @param width The width
+/// @param height The height
+/// @return A pointer to the created bitmap
+Bitmap* private_createBitmapCommon(int x, int y, int width, int height);
+
+/// @brief Gets a RECT structure for a particular bitmap
+/// @param bitmap The bitmap to calculate the RECT structure for
+/// @return A RECT structure for the specified bitmap
+RECT private_getBitmapRect(Bitmap* bitmap);
+
+/// @brief Redraws the bitmap in the form
+/// @param bitmap The bitmap to be redrawn
+void private_redrawBitmap(Bitmap* bitmap);
+
+/// @brief The sublcass procedure for subclassed controls
+/// @param hWnd 
+/// @param msg 
+/// @param wParam 
+/// @param lParam 
+/// @param subclassId The subclass ID for the control
+/// @param tooltipPointer A pointer to the tooltip, or NULL
+/// @return LRESULT
 LRESULT CALLBACK private_subclassProc(
 	HWND hWnd,
 	unsigned int msg,
@@ -29,11 +93,26 @@ LRESULT CALLBACK private_subclassProc(
 	DWORD_PTR tooltipPointer
 );
 
+/// @brief Global variable used for unique button IDs
 int global_nextButtonId = 100;
+
+/// @brief Global variable to hold the form's HFONT
 HFONT global_buttonFont = NULL;
+
+/// @brief Global variable for the form itself
+// Todo, replace with function parameters
 Form* global_thisForm = NULL;
+
+/// @brief The first button in the button list
 private_ButtonList* global_firstButton = NULL;
+
+/// @brief The last button in the button list
 private_ButtonList* global_lastButton = NULL;
+
+/// @brief A pointer to the bitmap to show on the form
+// Note: This is a BIG hack to get this working in time for the end of the jam
+// This needs to be removed
+Bitmap* global_bitmap = NULL;
 
 Form* createForm(int x, int y, int width, int height, wchar* title)
 {
@@ -183,13 +262,98 @@ void addControlEventHandler(
 	}
 }
 
-void addTooltip(Control* control, wchar* text)
+void createTooltip(Control* control, wchar* text)
 {
 	control->tooltip = private_createTooltip(
 		control->hWnd,
 		text
 	);
 	private_registerSubclass(control);
+}
+
+Bitmap* createBitmapFromRGB(
+	int x, int y, int width, int height,
+	u8 red, u8 green, u8 blue
+)
+{
+	Bitmap* bitmap = private_createBitmapCommon(x, y, width, height);
+	bitmap->red = red;
+	bitmap->green = green;
+	bitmap->blue = blue; 
+	return bitmap;
+}
+
+Bitmap* createBitmapFromFile(
+	int x, int y, int width, int height, wchar* filepath
+)
+{
+	Bitmap* bitmap = private_createBitmapCommon(x, y, width, height);
+	bitmap->filename = filepath;
+	bitmap->hBitmap = (HBITMAP) LoadImageW(
+		NULL,
+		filepath,
+		IMAGE_BITMAP,
+		width,
+		height,
+		LR_LOADFROMFILE
+	);
+	assert(bitmap->hBitmap != NULL);
+	return bitmap;
+}
+
+void setBitmapRGB(
+	Bitmap* bitmap, u8 red, u8 green, u8 blue
+)
+{
+	bitmap->red = red;
+	bitmap->green = green;
+	bitmap->blue = blue;
+	private_redrawBitmap(bitmap);
+}
+
+Bitmap* private_createBitmapCommon(int x, int y, int width, int height)
+{
+	Bitmap* bitmap = (Bitmap*) HeapAlloc(
+		GetProcessHeap(),
+		HEAP_ZERO_MEMORY,
+		sizeof(Bitmap)
+	);
+	assert(bitmap != NULL);
+	bitmap->control.x = x;
+	bitmap->control.y = y;
+	bitmap->control.width = width;
+	bitmap->control.height = height;
+
+	// TODO: Remove
+	global_bitmap = bitmap;
+
+	return bitmap;
+}
+
+void setBitmapFile(Bitmap* bitmap, wchar* newFilePath)
+{
+	DeleteObject(global_bitmap->hBitmap);
+	global_bitmap->filename = newFilePath;
+	global_bitmap->hBitmap = (HBITMAP) LoadImageW(
+		NULL,
+		newFilePath,
+		IMAGE_BITMAP,
+		global_bitmap->control.width,
+		global_bitmap->control.height,
+		LR_LOADFROMFILE
+	);
+	assert(global_bitmap->hBitmap != NULL);
+	private_redrawBitmap(bitmap);
+}
+
+void private_redrawBitmap(Bitmap* bitmap)
+{
+	RECT bitmapRect = private_getBitmapRect(bitmap);
+	InvalidateRect(
+		global_thisForm->hWnd,
+		&bitmapRect,
+		TRUE
+	);
 }
 
 Form* private_getFormFromHWND(HWND hWnd)
@@ -199,6 +363,19 @@ Form* private_getFormFromHWND(HWND hWnd)
 		GWLP_USERDATA
 	);
 	return (Form*) longPointer;
+}
+
+RECT private_getBitmapRect(Bitmap* bitmap)
+{
+	Control control = bitmap->control;
+	RECT bitmapRect =
+	{
+		.left = control.x,
+		.top = control.y,
+		.right = control.x + control.width,
+		.bottom = control.y + control.height
+	};
+	return bitmapRect;
 }
 
 LRESULT private_windowProc(
@@ -221,13 +398,79 @@ LRESULT private_windowProc(
 			(LONG_PTR) form
 		);
 	}
+	else if (msg == WM_PAINT &&
+		global_bitmap != NULL)
+	{
+		PAINTSTRUCT paintStruct;
+		HDC ourDC;
+
+		ourDC = BeginPaint(
+			hWnd,
+			&paintStruct
+		);
+
+		if (global_bitmap->filename != NULL)
+		{
+			HDC bitmapDC;
+			HBITMAP oldBitmap;
+			Control bitmapControl = global_bitmap->control;
+			// Select bitmap into DC
+			bitmapDC = CreateCompatibleDC(ourDC);
+			oldBitmap = (HBITMAP) SelectObject(
+				bitmapDC,
+				(HBITMAP) global_bitmap->hBitmap
+			);
+			BitBlt(
+				ourDC,
+				bitmapControl.x,
+				bitmapControl.y,
+				bitmapControl.width,
+				bitmapControl.height,
+				bitmapDC,
+				0,
+				0,
+				SRCCOPY
+			);
+			SelectObject(
+				bitmapDC,
+				oldBitmap
+			);
+			DeleteDC(bitmapDC);
+		}
+		else
+		{
+			RECT bitmapRect = private_getBitmapRect(global_bitmap);
+			FillRect(
+				ourDC,
+				&bitmapRect,
+				CreateSolidBrush(
+					RGB(
+						global_bitmap->red,
+						global_bitmap->green,
+						global_bitmap->blue
+					)
+				)
+			);
+		}
+
+		EndPaint(
+			hWnd,
+			&paintStruct
+		);
+	}
 	else if (msg == WM_LBUTTONDOWN)
 	{
 		Form* form = private_getFormFromHWND(hWnd);
 		if (form->eventHandlers.OnClick != NULL)
 		{
-			EventData_OnClick data = { form->title };
-			form->eventHandlers.OnClick(form, &data);
+			EventData_OnClick data = 
+			{ 
+				form->title 
+			};
+			form->eventHandlers.OnClick(
+				form, 
+				&data
+			);
 		}
 	}
 	else if (msg == WM_COMMAND)
@@ -244,7 +487,10 @@ LRESULT private_windowProc(
 			if (id == button->id &&
 				onClick != NULL)
 			{
-				EventData_OnClick data = { button->text };
+				EventData_OnClick data = 
+				{
+					button->text 
+				};
 				onClick(&(button->control), &data);
 			}
 		}
@@ -310,9 +556,11 @@ void private_getGuiFont(void)
 
 void private_doCleanup(void)
 {
+	HANDLE processHeap = GetProcessHeap();
+
 	// Clean up form
 	HeapFree(
-		GetProcessHeap(),
+		processHeap,
 		0,
 		global_thisForm
 	);
@@ -320,7 +568,6 @@ void private_doCleanup(void)
 	// Clean up buttons and buttonList
 	private_ButtonList* listItem = global_firstButton;
 	private_ButtonList* nextItem;
-	HANDLE processHeap = GetProcessHeap();
 	while (listItem != NULL)
 	{
 		nextItem = listItem->next;
@@ -331,6 +578,13 @@ void private_doCleanup(void)
 
 	// Clean up fonts
 	DeleteObject(global_buttonFont);
+
+	// Clean up bitmap if it exists
+	if (global_bitmap != NULL)
+	{
+		DeleteObject(global_bitmap->hBitmap);
+		HeapFree(processHeap, 0, global_bitmap);
+	}
 }
 
 void private_addButtonToList(Button* button)
@@ -356,7 +610,7 @@ void private_addButtonToList(Button* button)
 
 /// @brief centers a window on the desktop
 /// @param hWnd a handle to the window to center
-void private_centerForm(Form* form)
+void centerForm(Form* form)
 {
 	HWND hWnd = form->hWnd;
 	RECT rectDesktop, rectDialog, rectDesktopCopy;
@@ -478,7 +732,7 @@ LRESULT CALLBACK private_subclassProc(
 )
 {
 	UNREFERENCED_PARAMETER(subclassId);
-	BOOL result = TRUE;
+	LRESULT result = TRUE;
 
 	// Track if the mouse is currently within the control
 	static bool mouseIsInsideControl = false;
@@ -545,7 +799,7 @@ LRESULT CALLBACK private_subclassProc(
 					control->tooltip.hWnd,
 					TTM_TRACKACTIVATE,
 					(WPARAM) TRUE,
-					(LPARAM) &(control->tooltip.toolInfo)
+					(LPARAM) & (control->tooltip.toolInfo)
 				);
 			}
 		}

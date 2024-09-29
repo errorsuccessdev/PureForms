@@ -1,14 +1,10 @@
-/*
- *	TODOS:
- *		???
- */
-
 #include "PureForms.h"
+#include <stdio.h>
 
 void button_OnClick(Control* this, void* eventData);
-void form_OnClick(Form* this, void* eventData);
 void form_OnClose(Form* this, void* eventData);
-void button_OnHover(Control* this, void* eventData);
+
+Bitmap* global_ourBitmap = NULL;
 
 int WINAPI wWinMain(
 	_In_ HINSTANCE hInstance,
@@ -20,77 +16,127 @@ int WINAPI wWinMain(
 	Form* frmMain = createForm(
 		CW_USEDEFAULT,
 		CW_USEDEFAULT,
-		240,
-		170,
-		L"My Form"
+		335,
+		160,
+		L"Worst color picker ever"
 	);
 	assert(frmMain != NULL);
-	addFormEventHandler(frmMain, FormEvent_OnClick, form_OnClick);
-	addFormEventHandler(frmMain, FormEvent_OnClose, form_OnClose);
+	centerForm(frmMain);
+	addFormEventHandler(
+		frmMain, 
+		FormEvent_OnClose, 
+		form_OnClose
+	);
 
-	Button* btnFirst = createButton(
+	global_ourBitmap = createBitmapFromRGB(
+		0,
+		0,
+		130,
+		130,
+		0,
+		0,
+		0
+	);
+	assert(global_ourBitmap != NULL);
+
+	Button* btnRed = createButton(
+		150,
 		10,
-		10,
-		200,
+		150,
 		30,
-		L"Click me!",
+		L"Red",
 		true
 	);
-
-	Button* btnSecond = createButton(
-		10,
-		50,
-		200,
-		30,
-		L"No, click me instead!", 
-		false
+	createTooltip(
+		getControl(btnRed), 
+		L"Add red to the bitmap"
 	);
 
-	Button* btnThird = createButton(
-		10,
-		90,
-		200,
+	Button* btnGreen = createButton(
+		150,
+		45,
+		150,
 		30,
-		L"DO NOT click me!",
+		L"Green", 
 		false
+	);
+	createTooltip(
+		getControl(btnGreen),
+		L"Add green to the bitmap"
+	);
+
+	Button* btnBlue = createButton(
+		150,
+		80,
+		150,
+		30,
+		L"Blue",
+		false
+	);
+	createTooltip(
+		getControl(btnBlue),
+		L"Add blue to the bitmap"
 	);
 
 	addControlEventHandler(
-		getControl(btnFirst),
+		getControl(btnRed),
 		ControlEvent_OnClick,
 		button_OnClick
 	);
-	addControlEventHandler(
-		getControl(btnFirst), 
-		ControlEvent_OnHover,
-		button_OnHover
-	);
-	addTooltip(getControl(btnFirst), L"This is a tooltip");
 
 	addControlEventHandler(
-		getControl(btnSecond), 
+		getControl(btnGreen), 
 		ControlEvent_OnClick,
 		button_OnClick
 	);
+
 	addControlEventHandler(
-		getControl(btnThird), 
-		ControlEvent_OnClick, 
+		getControl(btnBlue),
+		ControlEvent_OnClick,
 		button_OnClick
 	);
 
-	showForm(frmMain, showCommand);
+	showForm(
+		frmMain, 
+		showCommand
+	);
 }
 
 void button_OnClick(Control* this, void* eventData)
 {
 	EventData_OnClick* data = (EventData_OnClick*) eventData;
-	OutputDebugStringW(data->text);
-}
-
-void form_OnClick(Form* this, void* eventData)
-{
-	EventData_OnClick* data = (EventData_OnClick*) eventData;
-	OutputDebugStringW(data->text);
+	u8 red = global_ourBitmap->red;
+	u8 green = global_ourBitmap->green;
+	u8 blue = global_ourBitmap->blue;
+	int increment = 16;
+	if (wcscmp(L"Red", data->text) == 0)
+	{
+		red += increment;
+	}
+	if (wcscmp(L"Green", data->text) == 0)
+	{
+		green += increment;
+	}
+	if (wcscmp(L"Blue", data->text) == 0)
+	{
+		blue += increment;
+	}
+	setBitmapRGB(
+		global_ourBitmap, 
+		red, 
+		green, 
+		blue
+	);
+	char buffer[256]; 
+	snprintf(
+		buffer, 
+		256, 
+		"%d, %d, %d\n", 
+		red,
+		green, 
+		blue
+	);
+	OutputDebugStringA(buffer);
 }
 
 void form_OnClose(Form* this, void* eventData)
@@ -103,9 +149,4 @@ void form_OnClose(Form* this, void* eventData)
 		MB_YESNO | MB_ICONQUESTION
 	);
 	data->shouldClose = (option == IDYES) ? true : false;
-}
-
-void button_OnHover(Control* this, void* eventData)
-{
-	OutputDebugStringW(L"OnHover event handler was called");
 }
